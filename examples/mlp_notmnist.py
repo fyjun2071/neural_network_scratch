@@ -5,13 +5,17 @@ from six.moves import cPickle as pickle
 from sklearn.utils import shuffle
 
 from km.graph import Graph
-from km.node import *
-from km.optimizer import *
-from km.nn import *
-from km.session import *
+from km.node import Constant, CrossEntropyWithSoftMax, Linear, PlaceHolder, Sigmoid, Softmax, Variable
+from km.optimizer import GradientDescent
+from km.nn import normal
+from km.session import Session
 
-large_folder = r'D:\development\jupyter\data\notMNIST_large'
-small_folder = r'D:\development\jupyter\data\notMNIST_small'
+import numpy as np
+
+data_folder = r'/Users/noone/development/python/data/notMNIST'
+pickle_file = os.path.join(data_folder, 'notMNIST.pickle')
+large_folder = os.path.join(data_folder, 'notMNIST_large')
+small_folder = os.path.join(data_folder, 'notMNIST_small')
 
 train_folders = [os.path.join(large_folder, d) for d in os.listdir(large_folder)]
 test_folders = [os.path.join(small_folder, d) for d in os.listdir(small_folder)]
@@ -47,7 +51,6 @@ def accuracy(predictions, labels):
 
 def nomnist():
     # 加载数据集文件，数据集文件处理详见notmnist_dataset.py
-    pickle_file = r'D:\development\jupyter\data\notMNIST.pickle'
     train_data, test_data, valid_data = load_data(pickle_file)
     train_dataset = train_data[0]
     train_labels = train_data[1]

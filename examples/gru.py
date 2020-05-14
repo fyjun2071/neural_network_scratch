@@ -1,11 +1,11 @@
 import time
 
 from km.graph import Graph
-from km.node import *
-from km.nn import *
-from km.optimizer import *
+from km.node import CrossEntropyWithSoftMax, Linear, Node, PlaceHolder, PolyLinear, Sigmoid, Tanh, Variable
+from km.nn import normal, to_onehot
+from km.optimizer import GradientDescent
 from km.session import Session
-from examples.jay_lyrics_dataset import *
+from examples.jay_lyrics_dataset import data_iter_consecutive, load_data_jay_lyrics
 import numpy as np
 
 

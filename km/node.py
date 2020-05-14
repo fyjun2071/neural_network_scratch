@@ -30,13 +30,13 @@ class Node:
         """
         前向传播计算本节点的值
         """
-        raise NotImplemented
+        raise NotImplementedError
 
     def backward(self):
         """
         反向传播，计算结果节点对本节点的梯度
         """
-        raise NotImplemented
+        raise NotImplementedError
 
     def eval(self):
         return self.graph.session.eval(self)
