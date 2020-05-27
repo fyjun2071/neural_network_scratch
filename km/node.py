@@ -119,10 +119,10 @@ class Add(Node):
     向量加法
     """
 
-    def __init__(self, input_1, input_2, name='Dot'):
-        super().__init__(inputs=[input_1, input_2], name=name)
-        self.input1 = input_1
-        self.input2 = input_2
+    def __init__(self, input1, input2, name='Add'):
+        super().__init__(inputs=[input1, input2], name=name)
+        self.input1 = input1
+        self.input2 = input2
 
     def compute_value(self):
         assert self.input1.dimension() == self.input2.dimension()
@@ -137,10 +137,10 @@ class Dot(Node):
     向量内积
     """
 
-    def __init__(self, input_1, input_2, name='Dot'):
-        super().__init__(inputs=[input_1, input_2], name=name)
-        self.input1 = input_1
-        self.input2 = input_2
+    def __init__(self, input1, input2, name='Dot'):
+        super().__init__(inputs=[input1, input2], name=name)
+        self.input1 = input1
+        self.input2 = input2
 
     def compute_value(self):
         assert self.input1.dimension() == self.input2.dimension()
@@ -181,20 +181,19 @@ class ReLU(Node):
 class MSE(Node):
     def __init__(self, y_true, y_hat, name='MSE'):
         super().__init__(inputs=[y_true, y_hat], name=name)
-        self.y_true_node = y_true
-        self.y_hat_node = y_hat
+        self.y_true = y_true
+        self.y_hat = y_hat
         self.diff = None
 
     def compute_value(self):
-        y_true_flatten = self.y_true_node.value.reshape(-1, 1)
-        y_hat_flatten = self.y_hat_node.value.reshape(-1, 1)
-        self.diff = y_true_flatten - y_hat_flatten
-        self.value = np.mean(self.diff ** 2)
+        self.diff = self.y_true - self.y_hat
+        self.value = np.mat(0.5 * np.mean(self.diff ** 2))
 
     def compute_grad(self, parent):
-        n = self.y_hat_node.value.shape[0]
-        self.gradients[self.y_true_node] = (2 / n) * self.diff
-        self.gradients[self.y_hat_node] = (-2 / n) * self.diff
+        if parent is self.y_true:
+            return (self.diff / self.dimension()).T
+        else:
+            return -(self.diff / self.dimension()).T
 
 
 class Softmax(Node):
@@ -219,12 +218,12 @@ class CrossEntropyWithSoftMax(Node):
 
     def __init__(self, x, labels, name='CrossEntropyWithSoftMax'):
         super().__init__(inputs=[x, labels], name=name)
-        self.x_node = x
+        self.x = x
         self.labels = labels
         self.y = None
 
     def compute_value(self):
-        self.y = softmax(self.x_node.value)
+        self.y = softmax(self.x.value)
         self.value = np.mat(-np.sum(np.multiply(self.labels.value, np.log(self.y + 1e-10))))
 
     def compute_grad(self, parent):
