@@ -9,40 +9,71 @@ class Node:
     计算图节点类基类
     """
 
-    def __init__(self, inputs=None, name=''):
-        if inputs is None:
-            inputs = []
-        self.inputs = inputs
+    def __init__(self, parents, name='Node'):
         self.name = name
-        self.value = None
-        self.outputs = []
-        self.gradients = {}  # 梯度
-        self.graph = graph.default_graph  # 计算图对象，默认为全局对象default_graph
-        self.params = []
+        self.value = None   # 节点的值，np.matrix类型
+        self.parents = parents
+        self.children = []
+        self.gradient = None  # 梯度
+        for node in self.parents:
+            node.children.append(self)  # 建立节点之间的连接
 
-        for node in self.inputs:
-            node.outputs.append(self)  # 建立节点之间的连接
-
+        # 计算图对象，默认为全局对象default_graph
+        self.graph = graph.default_graph
         # 将本节点添加到计算图中
         self.graph.add_node(self)
 
     def forward(self):
         """
+        前向传播计算
+        """
+        for node in self.parents:
+            if node.value is None:
+                node.forward()
+        self.compute_value()
+        return self.value
+
+    def backward(self, result):
+        """
+        反向传播，链式法则
+        """
+        if self.gradient is None:
+            if self is result:
+                # 最后的损失函数节点
+                self.gradient = np.mat(np.eye(self.dimension()))
+            else:
+                self.gradient = np.mat(np.zeros((result.dimension(), self.dimension())))
+                for child in self.get_children():
+                    if child.value is not None:
+                        self.gradient += child.backward(result) * child.compute_grad(self)
+        return self.gradient
+
+    def compute_value(self):
+        """
         前向传播计算本节点的值
         """
         raise NotImplementedError
 
-    def backward(self):
+    def compute_grad(self, parent):
         """
-        反向传播，计算结果节点对本节点的梯度
+        反向传播，计算父节点对本节点的梯度
         """
         raise NotImplementedError
 
-    def eval(self):
-        return self.graph.session.eval(self)
+    def get_parents(self):
+        return self.parents
 
-    def clear_gradients(self):
-        self.gradients.clear()
+    def get_children(self):
+        return self.children
+
+    def dimension(self):
+        """
+        返回本节点的值的向量维数
+        """
+        return self.value.shape[0] if self.value is not None else None
+
+    def clear_gradient(self):
+        self.gradient = None
 
     def reset_value(self, recursive=True):
         """
@@ -50,219 +81,101 @@ class Node:
         """
         self.value = None
         if recursive:
-            for o in self.outputs:
-                o.reset_value()
+            for node in self.children:
+                node.reset_value()
 
     def __repr__(self):
         return '{}:{}'.format(self.__class__.__name__, self.name)
 
 
-class PlaceHolder(Node):
-    def __init__(self, shape=None, name='PlaceHolder'):
-        super().__init__([], name)
-        self.shape = shape
-
-    def forward(self):
-        pass
-
-    def backward(self):
-        pass
-
-
-class Constant(Node):
-    def __init__(self, value, name='Constant'):
-        super().__init__([], name)
-        self.value = value
-
-    def forward(self):
-        pass
-
-    def backward(self):
-        pass
-
-
 class Variable(Node):
-    def __init__(self, value=None, name='Variable'):
+    """
+    变量节点，np.matrix类型，列向量
+    """
+
+    def __init__(self, dim, trainable=False, name='Variable'):
         super().__init__([], name)
+        self.dim = dim
+        self.trainable = trainable
+
+    def set_value(self, value):
+        """
+        为变量赋值
+        """
+        assert isinstance(value, np.matrix) and value.shape == (self.dim, 1)
+        # 本节点的值被改变，重置所有下游节点的值
+        self.reset_value()
         self.value = value
 
-    def forward(self):
+    def compute_value(self):
         pass
 
-    def backward(self):
-        for node in self.outputs:
-            if self not in node.gradients:
-                continue
-            grad_cost = node.gradients[self]
-            self.gradients[self] = grad_cost
+    def compute_grad(self, parent):
+        pass
 
 
 class Add(Node):
+    """
+    向量加法
+    """
+
     def __init__(self, input_1, input_2, name='Dot'):
         super().__init__(inputs=[input_1, input_2], name=name)
-        self.input1_node = input_1
-        self.input2_node = input_2
+        self.input1 = input_1
+        self.input2 = input_2
 
-    def forward(self):
-        self.value = self.input1_node.value + self.input2_node.value
+    def compute_value(self):
+        assert self.input1.dimension() == self.input2.dimension()
+        self.value = self.input1.value + self.input2.value
 
-    def backward(self):
-        self.gradients = {n: np.zeros_like(n.value) for n in self.inputs}
-        for node in self.outputs:
-            if self not in node.gradients:
-                continue
-            grad_cost = node.gradients[self]
-            self.gradients[self.input1_node] += np.sum(grad_cost * 1, axis=0, keepdims=False)
-            self.gradients[self.input2_node] += np.sum(grad_cost * 1, axis=0, keepdims=False)
+    def compute_grad(self, parent):
+        return np.mat(np.eye(self.dimension()))  # 向量之和对其中任一个向量的雅可比矩阵是单位矩阵
 
 
 class Dot(Node):
-    """ 点乘 """
+    """
+    向量内积
+    """
 
     def __init__(self, input_1, input_2, name='Dot'):
         super().__init__(inputs=[input_1, input_2], name=name)
-        self.input1_node = input_1
-        self.input2_node = input_2
+        self.input1 = input_1
+        self.input2 = input_2
 
-    def forward(self):
-        self.value = np.dot(self.input1_node.value, self.input2_node.value)
+    def compute_value(self):
+        assert self.input1.dimension() == self.input2.dimension()
+        self.value = self.input1.value.T * self.input2.value
 
-    def backward(self):
-        self.gradients = {n: np.zeros_like(n.value) for n in self.inputs}
-        for node in self.outputs:
-            if self not in node.gradients:
-                continue
-            grad_cost = node.gradients[self]
-            self.gradients[self.input1_node] += np.dot(grad_cost, self.input2_node.value.T)
-            self.gradients[self.input2_node] += np.dot(self.input1_node.value.T, grad_cost)
-
-
-class Multi(Node):
-    """ 数乘 """
-
-    def __init__(self, input_1, input_2, name='Multi'):
-        super().__init__(inputs=[input_1, input_2], name=name)
-        self.input1_node = input_1
-        self.input2_node = input_2
-
-    def forward(self):
-        self.value = self.input1_node.value * self.input2_node.value
-
-    def backward(self):
-        self.gradients = {n: np.zeros_like(n.value) for n in self.inputs}
-        for node in self.outputs:
-            if self not in node.gradients:
-                continue
-            grad_cost = node.gradients[self]
-            self.gradients[self.input1_node] += grad_cost * self.input2_node.value
-            self.gradients[self.input2_node] += grad_cost * self.input1_node.value
-
-
-class Linear(Node):
-    def __init__(self, X, W, b, name='Linear'):
-        super().__init__(inputs=[X, W, b], name=name)
-        self.x_node = X
-        self.w_node = W
-        self.b_node = b
-
-    def forward(self):
-        self.value = np.dot(self.x_node.value, self.w_node.value) + self.b_node.value
-
-    def backward(self):
-        self.gradients = {n: np.zeros_like(n.value) for n in self.inputs}
-        for node in self.outputs:
-            if self not in node.gradients:
-                continue
-            grad_cost = node.gradients[self]
-            self.gradients[self.w_node] += np.dot(self.x_node.value.T, grad_cost)
-            self.gradients[self.x_node] += np.dot(grad_cost, self.w_node.value.T)
-            self.gradients[self.b_node] += np.sum(grad_cost * 1, axis=0, keepdims=False)
-
-
-class PolyLinear(Node):
-    """
-    多元线性节点
-    """
-
-    def __init__(self, x_nodes, w_nodes, b_node, name='PolyLinear'):
-        """
-        :param x_nodes: 所有的X
-        :param w_nodes: 所有的W
-        :param b_node:
-        :param name:
-        """
-        super().__init__(inputs=[*x_nodes, *w_nodes, b_node], name=name)
-        self.x_nodes = x_nodes
-        self.w_nodes = w_nodes
-        self.b_node = b_node
-
-    def forward(self):
-        for x_node, w_node in zip(self.x_nodes, self.w_nodes):
-            if self.value is None:
-                self.value = np.dot(x_node.value, w_node.value)
-            self.value += np.dot(x_node.value, w_node.value)
-        self.value += self.b_node.value
-
-    def backward(self):
-        self.gradients = {n: np.zeros_like(n.value) for n in self.inputs}
-        for node in self.outputs:
-            if self not in node.gradients:
-                continue
-            grad_cost = node.gradients[self]
-            for x_node, w_node in zip(self.x_nodes, self.w_nodes):
-                self.gradients[w_node] += np.dot(x_node.value.T, grad_cost)
-                self.gradients[x_node] += np.dot(grad_cost, w_node.value.T)
-            self.gradients[self.b_node] += np.sum(grad_cost * 1, axis=0, keepdims=False)
+    def compute_grad(self, parent):
+        if parent is self.input1:
+            self.gradient = self.input2.value.T
+        else:
+            self.gradient = self.input1.value.T
 
 
 class Sigmoid(Node):
     def __init__(self, node, name='Sigmoid'):
         super().__init__(inputs=[node], name=name)
-        self.x_node = node
-        self.partial = None
+        self.x = node
 
-    def forward(self):
-        self.value = sigmoid(self.x_node.value)
+    def compute_value(self):
+        self.value = np.mat(sigmoid(self.x.value))
 
-    def backward(self):
-        self.gradients = {n: np.zeros_like(n.value) for n in self.inputs}
-        y = self.value
-        self.partial = y * (1 - y)
-        for n in self.outputs:
-            grad_cost = n.gradients[self]
-            self.gradients[self.x_node] += self.partial * grad_cost
+    def compute_grad(self, parent):
+        return np.diag(np.mat(np.multiply(self.value, 1 - self.value)).A1)
 
 
 class ReLU(Node):
     def __init__(self, node, name='ReLU'):
         super().__init__(inputs=[node], name=name)
-        self.x_node = node
+        self.x = node
 
-    def forward(self):
-        v = self.x_node.value
-        self.value = np.where(v > 0, v, 0)
+    def compute_value(self):
+        v = self.x.value
+        self.value = np.mat(np.where(v > 0, v, 0.1 * v))
 
-    def backward(self):
-        self.gradients = {n: np.zeros_like(n.value) for n in self.inputs}
-        for n in self.outputs:
-            grad_cost = n.gradients[self]
-            self.gradients[self.x_node] += np.where(self.value > 0, 1, 0) * grad_cost
-
-
-class Tanh(Node):
-    def __init__(self, node, name='Node'):
-        super().__init__(inputs=[node], name=name)
-        self.x_node = node
-
-    def forward(self):
-        self.value = 2 * sigmoid(2 * self.x_node.value) - 1
-
-    def backward(self):
-        self.gradients = {n: np.zeros_like(n.value) for n in self.inputs}
-        y = self.value
-        for n in self.outputs:
-            grad_cost = n.gradients[self]
-            self.gradients[self.x_node] += (1 - y ** 2) * grad_cost
+    def compute_grad(self, parent):
+        return np.diag(np.mat(np.where(self.x.value > 0, 1, 0.1)))
 
 
 class MSE(Node):
@@ -272,13 +185,13 @@ class MSE(Node):
         self.y_hat_node = y_hat
         self.diff = None
 
-    def forward(self):
+    def compute_value(self):
         y_true_flatten = self.y_true_node.value.reshape(-1, 1)
         y_hat_flatten = self.y_hat_node.value.reshape(-1, 1)
         self.diff = y_true_flatten - y_hat_flatten
         self.value = np.mean(self.diff ** 2)
 
-    def backward(self):
+    def compute_grad(self, parent):
         n = self.y_hat_node.value.shape[0]
         self.gradients[self.y_true_node] = (2 / n) * self.diff
         self.gradients[self.y_hat_node] = (-2 / n) * self.diff
@@ -287,28 +200,35 @@ class MSE(Node):
 class Softmax(Node):
     def __init__(self, x, name='Softmax'):
         super().__init__(inputs=[x], name=name)
-        self.x_node = x
+        self.x = x
 
-    def forward(self):
-        self.value = softmax(self.x_node.value)
+    def compute_value(self):
+        self.value = softmax(self.x.value)
 
-    def backward(self):
+    def compute_grad(self, parent):
         """
         我们不实现SoftMax节点的导数，训练时使用CrossEntropyWithSoftMax节点
         """
-        self.gradients[self.x_node] = np.eye(self.x_node.value.shape)
+        return np.mat(np.eye(self.dimension()))  # 无用
 
 
 class CrossEntropyWithSoftMax(Node):
+    """
+    交叉熵损失函数
+    """
+
     def __init__(self, x, labels, name='CrossEntropyWithSoftMax'):
         super().__init__(inputs=[x, labels], name=name)
         self.x_node = x
         self.labels = labels
         self.y = None
 
-    def forward(self):
+    def compute_value(self):
         self.y = softmax(self.x_node.value)
-        self.value = np.mean(-np.sum(self.labels.value * np.log(self.y + 1e-10), axis=1))
+        self.value = np.mat(-np.sum(np.multiply(self.labels.value, np.log(self.y + 1e-10))))
 
-    def backward(self):
-        self.gradients[self.x_node] = self.y - self.labels.value
+    def compute_grad(self, parent):
+        if parent is self.x:
+            return (self.y.value - self.labels.value).T
+        else:
+            return (-np.log(self.y.value)).T

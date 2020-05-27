@@ -1,4 +1,3 @@
-from .node import Variable
 
 
 class Graph:
@@ -8,23 +7,19 @@ class Graph:
 
     def __init__(self):
         self.nodes = []  # 计算图内的节点的列表
-        self.params = []  # 变量节点
-        self.session = None
 
     def add_node(self, node):
         """
         添加节点
         """
         self.nodes.append(node)
-        if isinstance(node, Variable):
-            self.params.append(node)
 
-    def clear_gradients(self):
+    def clear_gradient(self):
         """
-        清除图中全部节点的雅可比矩阵
+        清除图中全部节点的梯度
         """
         for node in self.nodes:
-            node.clear_gradients()
+            node.clear_gradient()
 
     def reset_value(self):
         """
@@ -36,9 +31,6 @@ class Graph:
     def as_default(self):
         global default_graph
         default_graph = self
-
-    def set_session(self, session):
-        self.session = session
 
 
 # 全局默认计算图
