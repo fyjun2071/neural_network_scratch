@@ -98,6 +98,9 @@ class Variable(Node):
         self.dim = dim
         self.trainable = trainable
 
+        # 如果需要初始化，则以正态分布随机初始化变量的值
+        self.value = np.mat(np.random.normal(0, 0.001, (self.dim, 1)))
+
     def set_value(self, value):
         """
         为变量赋值
@@ -151,6 +154,23 @@ class Dot(Node):
             self.gradient = self.input2.value.T
         else:
             self.gradient = self.input1.value.T
+
+
+class Vectorize(Node):
+    """
+    将多个父节点组装成一个向量
+    """
+
+    def __init__(self, parents, name='Vectorize'):
+        super().__init__(inputs=parents, name=name)
+        self.parents = parents
+
+    def compute(self):
+        assert len(self.parents) > 0
+        self.value = np.mat(np.array([node.value for node in self.parents])).T  # 将本节点的父节点的值列成向量
+
+    def get_jacobi(self, parent):
+        return np.mat([node is parent for node in self.parents]).astype(np.float).T
 
 
 class Sigmoid(Node):
