@@ -1,6 +1,6 @@
 import numpy as np
 
-from . import graph
+from . import graph as gp
 from .node import Node, Variable
 
 
@@ -9,8 +9,8 @@ class Optimizer:
     优化器基类
     """
 
-    def __init__(self, target, batch_size=12, graph=graph.default_graph):
-        assert isinstance(target, Node) and isinstance(graph, graph.Graph)
+    def __init__(self, target, batch_size=12, graph=gp.default_graph):
+        assert isinstance(target, Node) and isinstance(graph, gp.Graph)
         self.graph = graph
         self.target = target
         self.batch_size = batch_size
@@ -50,7 +50,7 @@ class Optimizer:
         """
 
         # 清除计算图中所有节点的雅可比矩阵
-        self.graph.clear_jacobi()
+        self.graph.clear_gradient()
 
         # 前向传播计算结果节点
         self.target.forward()
@@ -61,9 +61,9 @@ class Optimizer:
                 node.backward(self.target)
 
                 if node not in self.acc_gradient:
-                    self.acc_gradient[node] = node.jacobi.T
+                    self.acc_gradient[node] = node.gradient.T
                 else:
-                    self.acc_gradient[node] += node.jacobi.T
+                    self.acc_gradient[node] += node.gradient.T
 
 
 class GradientDescent(Optimizer):

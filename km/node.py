@@ -93,13 +93,14 @@ class Variable(Node):
     变量节点，np.matrix类型，列向量
     """
 
-    def __init__(self, dim, trainable=False, name='Variable'):
+    def __init__(self, dim, init=False, trainable=True, name='Variable'):
         super().__init__([], name)
         self.dim = dim
         self.trainable = trainable
 
         # 如果需要初始化，则以正态分布随机初始化变量的值
-        self.value = np.mat(np.random.normal(0, 0.001, (self.dim, 1)))
+        if init:
+            self.value = np.mat(np.random.normal(0, 0.001, (self.dim, 1)))
 
     def set_value(self, value):
         """
@@ -123,7 +124,7 @@ class Add(Node):
     """
 
     def __init__(self, input1, input2, name='Add'):
-        super().__init__(inputs=[input1, input2], name=name)
+        super().__init__(parents=[input1, input2], name=name)
         self.input1 = input1
         self.input2 = input2
 
@@ -141,7 +142,7 @@ class Dot(Node):
     """
 
     def __init__(self, input1, input2, name='Dot'):
-        super().__init__(inputs=[input1, input2], name=name)
+        super().__init__(parents=[input1, input2], name=name)
         self.input1 = input1
         self.input2 = input2
 
@@ -151,9 +152,9 @@ class Dot(Node):
 
     def compute_grad(self, parent):
         if parent is self.input1:
-            self.gradient = self.input2.value.T
+            return self.input2.value.T
         else:
-            self.gradient = self.input1.value.T
+            return self.input1.value.T
 
 
 class Vectorize(Node):
@@ -162,20 +163,20 @@ class Vectorize(Node):
     """
 
     def __init__(self, parents, name='Vectorize'):
-        super().__init__(inputs=parents, name=name)
+        super().__init__(parents=parents, name=name)
         self.parents = parents
 
-    def compute(self):
+    def compute_value(self):
         assert len(self.parents) > 0
         self.value = np.mat(np.array([node.value for node in self.parents])).T  # 将本节点的父节点的值列成向量
 
-    def get_jacobi(self, parent):
+    def compute_grad(self, parent):
         return np.mat([node is parent for node in self.parents]).astype(np.float).T
 
 
 class Sigmoid(Node):
     def __init__(self, node, name='Sigmoid'):
-        super().__init__(inputs=[node], name=name)
+        super().__init__(parents=[node], name=name)
         self.x = node
 
     def compute_value(self):
@@ -187,7 +188,7 @@ class Sigmoid(Node):
 
 class ReLU(Node):
     def __init__(self, node, name='ReLU'):
-        super().__init__(inputs=[node], name=name)
+        super().__init__(parents=[node], name=name)
         self.x = node
 
     def compute_value(self):
@@ -195,18 +196,18 @@ class ReLU(Node):
         self.value = np.mat(np.where(v > 0, v, 0.1 * v))
 
     def compute_grad(self, parent):
-        return np.diag(np.mat(np.where(self.x.value > 0, 1, 0.1)))
+        return np.diag(np.where(self.x.value.A1 > 0, 1, 0.1))
 
 
 class MSE(Node):
     def __init__(self, y_true, y_hat, name='MSE'):
-        super().__init__(inputs=[y_true, y_hat], name=name)
+        super().__init__(parents=[y_true, y_hat], name=name)
         self.y_true = y_true
         self.y_hat = y_hat
         self.diff = None
 
     def compute_value(self):
-        self.diff = self.y_true - self.y_hat
+        self.diff = self.y_true.value - self.y_hat.value
         self.value = np.mat(0.5 * np.mean(self.diff ** 2))
 
     def compute_grad(self, parent):
@@ -218,7 +219,7 @@ class MSE(Node):
 
 class Softmax(Node):
     def __init__(self, x, name='Softmax'):
-        super().__init__(inputs=[x], name=name)
+        super().__init__(parents=[x], name=name)
         self.x = x
 
     def compute_value(self):
@@ -237,7 +238,7 @@ class CrossEntropyWithSoftMax(Node):
     """
 
     def __init__(self, x, labels, name='CrossEntropyWithSoftMax'):
-        super().__init__(inputs=[x, labels], name=name)
+        super().__init__(parents=[x, labels], name=name)
         self.x = x
         self.labels = labels
         self.y = None
