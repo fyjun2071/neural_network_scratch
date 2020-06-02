@@ -100,7 +100,7 @@ class Variable(Node):
 
         # 如果需要初始化，则以正态分布随机初始化变量的值
         if init:
-            self.value = np.mat(np.random.normal(0, 0.001, (self.dim, 1)))
+            self.value = np.mat(np.random.normal(0, 0.01, (self.dim, 1)))
 
     def set_value(self, value):
         """
